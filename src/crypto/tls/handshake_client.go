@@ -394,44 +394,60 @@ func (hs *clientHandshakeState) doFullHandshake() error {
 			}
 		}
 
-		// We need to search our list of client certs for one
-		// where SignatureAlgorithm is acceptable to the server and the
-		// Issuer is in certReq.certificateAuthorities
-	findCert:
-		for i, chain := range c.config.Certificates {
-			if !rsaAvail && !ecdsaAvail {
-				continue
+		// If no client certs are available in Config and the
+		// GetClientCertificate callback is defined, get a the
+		// appropriate certificate from the callback function.
+		// It is the responsibility of the callback to return
+		// an appropriate certificate.
+		if c.config.Certificates == nil && c.config.GetClientCertificate != nil {
+			hello := &ServerHelloInfo{
+				CertCAs:   certReq.certificateAuthorities,
+				CertTypes: certReq.certificateTypes,
 			}
+			chainToSend, err = c.config.GetClientCertificate(hello)
+			if err != nil {
+				return err
+			}
+		} else {
+			// We need to search our list of client certs for one
+			// where SignatureAlgorithm is acceptable to the server and the
+			// Issuer is in certReq.certificateAuthorities
+		findCert:
+			for i, chain := range c.config.Certificates {
+				if !rsaAvail && !ecdsaAvail {
+					continue
+				}
 
-			for j, cert := range chain.Certificate {
-				x509Cert := chain.Leaf
-				// parse the certificate if this isn't the leaf
-				// node, or if chain.Leaf was nil
-				if j != 0 || x509Cert == nil {
-					if x509Cert, err = x509.ParseCertificate(cert); err != nil {
-						c.sendAlert(alertInternalError)
-						return errors.New("tls: failed to parse client certificate #" + strconv.Itoa(i) + ": " + err.Error())
+				for j, cert := range chain.Certificate {
+					x509Cert := chain.Leaf
+					// parse the certificate if this isn't the leaf
+					// node, or if chain.Leaf was nil
+					if j != 0 || x509Cert == nil {
+						if x509Cert, err = x509.ParseCertificate(cert); err != nil {
+							c.sendAlert(alertInternalError)
+							return errors.New("tls: failed to parse client certificate #" + strconv.Itoa(i) + ": " + err.Error())
+						}
 					}
-				}
 
-				switch {
-				case rsaAvail && x509Cert.PublicKeyAlgorithm == x509.RSA:
-				case ecdsaAvail && x509Cert.PublicKeyAlgorithm == x509.ECDSA:
-				default:
-					continue findCert
-				}
+					switch {
+					case rsaAvail && x509Cert.PublicKeyAlgorithm == x509.RSA:
+					case ecdsaAvail && x509Cert.PublicKeyAlgorithm == x509.ECDSA:
+					default:
+						continue findCert
+					}
 
-				if len(certReq.certificateAuthorities) == 0 {
-					// they gave us an empty list, so just take the
-					// first cert from c.config.Certificates
-					chainToSend = &chain
-					break findCert
-				}
-
-				for _, ca := range certReq.certificateAuthorities {
-					if bytes.Equal(x509Cert.RawIssuer, ca) {
+					if len(certReq.certificateAuthorities) == 0 {
+						// they gave us an empty list, so just take the
+						// first cert from c.config.Certificates
 						chainToSend = &chain
 						break findCert
+					}
+
+					for _, ca := range certReq.certificateAuthorities {
+						if bytes.Equal(x509Cert.RawIssuer, ca) {
+							chainToSend = &chain
+							break findCert
+						}
 					}
 				}
 			}
