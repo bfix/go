@@ -266,6 +266,17 @@ const (
 	RenegotiateFreelyAsClient
 )
 
+// ServerHelloInfo contains information from a ServerHello message in order to
+// guide certificate selection in the GetClientCertificate callback.
+type ServerHelloInfo struct {
+	// CertCAs lists the CA root certificates accepted for successful
+	// client authentication.
+	CertCAs [][]byte
+
+	// CertTypes lists the supported certificate types for each CA cert.
+	CertTypes []byte
+}
+
 // A Config structure is used to configure a TLS client or server.
 // After one has been passed to a TLS function it must not be
 // modified. A Config may be reused; the tls package will also not
@@ -303,6 +314,14 @@ type Config struct {
 	// retrieved from NameToCertificate. If NameToCertificate is nil, the
 	// first element of Certificates will be used.
 	GetCertificate func(clientHello *ClientHelloInfo) (*Certificate, error)
+
+	// GetClientCertificate returns a Certificate based on the given
+	// ServerHelloInfo. It will only be called if the server requests
+	// client authentication and if Certificates is empty.
+	//
+	// If GetClientCertificate is nil or returns nil, no client certificate
+	// is send to the server as a response.
+	GetClientCertificate func(serverHello *ServerHelloInfo) (*Certificate, error)
 
 	// RootCAs defines the set of root certificate authorities
 	// that clients use when verifying server certificates.
